@@ -1,0 +1,32 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-{{ .Chart.Name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "momo-store-chart.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 20%
+  selector:
+    matchLabels:
+      app:  {{ .Chart.Name }}
+  revisionHistoryLimit: 15
+  template:
+    metadata:
+      labels:
+        app:  {{ .Chart.Name }}
+    spec:
+      containers:
+        - name:  {{ .Chart.Name }}
+          image: "{{ .Values.image }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+    {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 12 }}
+    {{- end }}

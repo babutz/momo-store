@@ -1,0 +1,13 @@
+global:
+  imagePullSecrets:
+    - name: regcred
+
+frontend:
+  replicas: 2
+  image: gitlab.praktikum-services.ru:5050/00_babentsov_n/momo-store/frontend
+  imagePullPolicy: Always
+
+backend:
+  image: gitlab.praktikum-services.ru:5050/00_babentsov_n/momo-store/backend
+  replicas: 2
+  imagePullPolicy: Always

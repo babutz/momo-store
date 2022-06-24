@@ -1,0 +1,13 @@
+apiVersion: v2
+name: momo-store-chart
+description: A Helm chart for Kubernetes (Momo-Store)
+type: application
+version: 0.1.0
+appVersion: "latest"
+icon: https://storage.yandexcloud.net/babentsov-buckert/images/sausage.png
+
+dependencies:
+  - name: backend
+    version: 0.1.0
+  - name: frontend
+    version: 0.1.0

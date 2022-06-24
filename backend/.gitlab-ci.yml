@@ -1,0 +1,106 @@
+include:
+- template: Security/SAST.gitlab-ci.yml
+
+variables:
+  SECURE_LOG_LEVEL: Debug
+  VERSION: 1.0.${CI_PIPELINE_ID}
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+
+cache:
+    key: "$CI_JOB_NAME-$CI_COMMIT_REF_SLUG"
+
+.go-cache:
+  variables:
+    GOPATH: $CI_PROJECT_DIR/.go
+  before_script:
+    - mkdir -p .go
+  cache:
+    paths:
+      - .go/pkg/mod/
+
+services:
+  - docker:dind
+
+stages:
+  - build
+  - test
+  - release
+
+build-backend:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${CI_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${CI_REGISTRY_USER}" "${CI_REGISTRY_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+    - >-
+      /kaniko/executor
+      --context "backend"
+      --build-arg VERSION=${VERSION}
+      --cache-repo ${CONTAINER_BACKEND}:latest
+      --dockerfile "Dockerfile"
+      "${KANIKOPROXYBUILDARGS}"
+      --destination "${CONTAINER_BACKEND}:rc1"
+
+sast:
+  stage: test
+
+gosec-sast:
+  script:
+    - export GOPATH=${CI_PROJECT_DIR}/backend/.go
+    - /analyzer run --target-dir ${CI_PROJECT_DIR}/backend/
+
+nodejs-scan-sast:
+  rules:
+    - when: never
+
+go-test:
+  image: golang:latest
+  stage: test
+  extends: .go-cache
+  script:
+    - cd backend/cmd/api/app
+    - go test -v
+
+sonar-check:
+  stage: test
+  image: 
+    name: sonarsource/sonar-scanner-cli:latest
+  variables:
+    SONAR_USER_HOME: "${SONAR_HOME}"
+    SONAR_HOST_URL: "${SONAR_URL}"
+    SONAR_EXCLUSIONS: "**/*_test.go,**/vendor/**,**/testdata/*"
+    GIT_DEPTH: "0"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script: 
+    - cd backend
+    - ls 
+    - pwd
+    - sonar-scanner -Dsonar.qualitygate.wait=true -Dsonar.projectKey=00_NBABENTSOV_DIPLOM_BACK -Dsonar.login="${TOKEN_BACK}"
+  allow_failure: true
+
+lint-dockerfile:
+  image: docker:20-dind-rootless
+  stage: test
+  script:
+    - cd backend
+    - docker run --rm -v $PWD:/root/ projectatomic/dockerfile-lint dockerfile_lint
+
+release-backend:
+  stage: release
+  image: docker:20-dind-rootless
+  variables:
+    GIT_DEPTH: "0"
+    GIT_STRATEGY: none
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker pull ${CONTAINER_BACKEND}:rc1
+    - docker tag ${CONTAINER_BACKEND}:rc1 ${CONTAINER_BACKEND}:latest
+    - docker push ${CONTAINER_BACKEND}:latest
